@@ -7,15 +7,14 @@ import java.io.FileReader;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class MutualExclusion {
     private static int numOfNode;
     public static int interRequestDelay;
     private static int csExecutionTime;
     private static int numOfRequest;
-    private static boolean[] authorization; // maintained in each node's local memory
-    private static boolean[] deferredReply;
+//    private static boolean[] authorization; // maintained in each node's local memory
+//    private static boolean[] deferredReply;
     private static boolean using;
     private static boolean waiting;
     private static HashMap<Integer, String> hostMap = new HashMap<>();
@@ -82,6 +81,7 @@ public class MutualExclusion {
 
     public static void executeCriticalSection() {
         // TODO
+        currState.isInCriticalSection = true;
         System.out.println("Executing CS");
         csLeave();
     }
@@ -89,13 +89,15 @@ public class MutualExclusion {
 
     public static void csLeave() {
 
+
+        currState.isInCriticalSection = false;
     }
 
     public static void main(String[] args) throws Exception {
         int nodeId = Integer.parseInt(args[0]);
         readConfigFile(nodeId);
-        authorization = new boolean[numOfNode];
-        deferredReply = new boolean[numOfNode];
+//        authorization = new boolean[numOfNode];
+//        deferredReply = new boolean[numOfNode];
 
         InetSocketAddress address = new InetSocketAddress(portMap.get(nodeId)); // Get address from port number
         SctpServerChannel sctpServerChannel = SctpServerChannel.open();//Open server channel
@@ -117,7 +119,7 @@ public class MutualExclusion {
         while (recevierCount++ < numOfNode - 1) {
             SctpChannel rcvSC = sctpServerChannel.accept(); // Wait for incoming connection from client
 
-            Receiver rcv = new Receiver(rcvSC, currState); // Create a Receiver thread to handle incoming messages for each client
+            Receiver rcv = new Receiver(rcvSC, currState, senders); // Create a Receiver thread to handle incoming messages for each client
 //            currState.receiverTracker.put(rcv, true);
             receivers.add(rcv);
         }
@@ -133,9 +135,10 @@ public class MutualExclusion {
 //        for (Receiver receiver : receivers) receiver.join();
 
 
-        /*
-        execute ceEnter() every d ms
-         */
+
+        //TODO execute ceEnter() every d ms
+
+
     }
 
     static class Node {
@@ -167,16 +170,22 @@ class Synchronizer extends Thread {
         while (true) {
             synchronized (currState) {
                 if (currState.keys.size() == currState.totoalNumOfNodes - 1) {
+                    // Increase timestamp upon receiving all keys from neighbors
+                    currState.selfTimestamp = currState.globalMaxTimestamp + 1;
+                    currState.hasPendingRequest = false;
                     MutualExclusion.executeCriticalSection();
                     currState.notifyAll();
                 } else {
+                    currState.hasPendingRequest = true;
                     while (currState.keys.size() < currState.totoalNumOfNodes - 1) {
                         for (int neighbor : senders.keySet()) {
                             // TODO set timestamp
+                            // TODO just self+1 or global max +1???
+                            currState.selfTimestamp++;
                             String key = Math.min(currState.NODE, neighbor) + "-" + Math.max(currState.NODE, neighbor);
                             if (!currState.keys.contains(key)) {
-                                MessageInfo messageInfo = MessageInfo.createOutgoing(null, 0); // MessageInfo for SCTP layer
-                                Message message = new Message("Node " + currState.NODE + " make a request", MessageType.REQUEST, currState.NODE, 0);
+                                MessageInfo messageInfo = MessageInfo.createOutgoing(null, currState.selfTimestamp); // MessageInfo for SCTP layer
+                                Message message = new Message("Node " + currState.NODE + " make a request", MessageType.REQUEST, currState.NODE, currState.selfTimestamp, null);
                                 try {
                                     senders.get(neighbor).send(message.toByteBuffer(), messageInfo); // Messages are sent over SCTP using ByteBuffer
                                 } catch (Exception e) {
@@ -197,7 +206,7 @@ class Synchronizer extends Thread {
 //                }
 
                 // Then send out request
-                try {
+//                try {
 //                    if (currState.msgLeftToRcv == 0) {
 //                        currState.round_id++;
 //                        currState.msgLeftToRcv = currState.numberOfNeighbors;
@@ -219,11 +228,9 @@ class Synchronizer extends Thread {
 //                        for(Receiver rcv : currState.receiverTracker.keySet()) currState.receiverTracker.put(rcv, false);
 //                        currState.notifyAll();
 //                    }
-
-
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+//                } catch (Exception e) {
+//                    e.printStackTrace();
+//                }
             }
 
         }
@@ -238,14 +245,16 @@ class Synchronizer extends Thread {
  */
 class Receiver extends Thread {
     CurrState currState;
+    private HashMap<Integer, SctpChannel> senders;
 
     // Size of ByteBuffer to accept incoming messages
     static int MAX_MSG_SIZE = 4096;
     SctpChannel serverClient;
 
-    Receiver(SctpChannel sc, CurrState currState) {
+    Receiver(SctpChannel sc, CurrState currState, HashMap<Integer, SctpChannel> senders) {
         this.serverClient = sc;
         this.currState = currState;
+        this.senders = senders;
     }
 
     public void run() {
@@ -265,28 +274,34 @@ class Receiver extends Thread {
                         case REPLY: {
                             // add the key from REPLY to local key set
                             currState.keys.add(msg.keyCarried);
+                            currState.selfTimestamp = Math.max(currState.globalMaxTimestamp, msg.timestamp);
                         }
                         case REQUEST: {
 
                             if (currState.hasPendingRequest) {
                                 // compare timestamp
-                                if (currState.timestamp <= msg.timestamp) {
+                                if (currState.selfTimestamp <= msg.timestamp) {
                                     currState.wait();
+                                    sendReplyWithKey(msg, MessageType.REPLY); // REPLY
                                 } else {
                                     // Reply with key, and Request for key
-                                    //TODO add keyCarried to REPLY msg
-                                    Message reply = new Message("", MessageType.BOTH, currState.NODE, currState.timestamp);
+                                    // add keyCarried to REPLY msg
+                                    sendReplyWithKey(msg, MessageType.BOTH); //BOTH
                                 }
+                            } else {
+                                sendReplyWithKey(msg, MessageType.REPLY);
                             }
-                        }
 
+                        }
                         case BOTH: {
                             // add the key from REPLY to local key set
                             currState.wait();
 
-                            //
-                            // Reply with key, and Request for key
-                            Message reply = new Message("", MessageType.BOTH, currState.NODE, currState.timestamp);
+                            //TODO timestamp
+                            currState.keys.add(msg.keyCarried);
+                            currState.wait();
+                            sendReplyWithKey(msg, MessageType.REPLY);
+//                            Message reply = new Message("", MessageType.BOTH, currState.NODE, currState.selfTimestamp, null);
                         }
                     }
 //                    int msg_id = msg.round_id;
@@ -308,8 +323,17 @@ class Receiver extends Thread {
                 }
             }
         } catch (Exception ex) {
-            System.out.println(ex);
+            ex.printStackTrace();
         }
+    }
+
+    private void sendReplyWithKey(Message msg, MessageType type) throws Exception {
+        String keySendBack = Math.min(currState.NODE, msg.nodeId) + "-" + Math.max(currState.NODE, msg.nodeId);
+        MessageInfo messageInfo = MessageInfo.createOutgoing(null, 0); // MessageInfo for SCTP layer
+        Message replyAndRequest = new Message("", type, currState.NODE, currState.selfTimestamp, keySendBack);
+//                                    Message message = new Message("Node " +  currState.NODE  + " Sent a Message at Round " + currState.round_id, currState.round_id, currState.NODE, currState.hoppingNeighbors);
+        senders.get(msg.nodeId).send(replyAndRequest.toByteBuffer(), messageInfo); // Messages are sent over SCTP using ByteBuffer
+        System.out.println(replyAndRequest.message);
     }
 }
 
@@ -323,7 +347,8 @@ class CurrState {
 //    int msgLeftToRcv;
 //    int numberOfNeighbors;
     int totoalNumOfNodes;
-    int timestamp;
+    int selfTimestamp;
+    int globalMaxTimestamp;
     HashSet<String> keys;
     boolean isInCriticalSection;
     boolean hasPendingRequest;
@@ -339,7 +364,7 @@ class CurrState {
         this.NODE = NODE;
         this.totoalNumOfNodes = totoalNumOfNodes;
 //        this.numberOfNeighbors = numberOfNeighbors;
-        this.timestamp = timestamp;
+        this.selfTimestamp = timestamp;
 //        this.receiverTracker = receiverTracker;
 //        this.hoppingNeighbors = hoppingNeighbors;
 //        this.reached = reached;

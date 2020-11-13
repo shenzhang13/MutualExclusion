@@ -22,11 +22,12 @@ public class Message implements Serializable {
     String keyCarried;
 
     // Constructor
-    public Message(String msg, MessageType messageType, int nodeId, int timestamp) {
+    public Message(String msg, MessageType messageType, int nodeId, int timestamp, String keyCarried) {
         message = msg;
         this.messageType = messageType;
         this.timestamp = timestamp;
         this.nodeId = nodeId;
+        this.keyCarried = keyCarried;
     }
 
     // Convert current instance of Message to ByteBuffer in order to send message over SCTP
