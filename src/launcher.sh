@@ -8,7 +8,7 @@ PROJDIR=/home/012/s/sx/sxz162330/AOS/Project2
 
 # Directory where the config file is located on your local system
 #CONFIGLOCAL=$HOME/src/config.txt
-CONFIGLOCAL=$PROJDIR/configuration.txt
+CONFIGLOCAL=$PROJDIR/config.txt
 
 # Directory your java classes are in
 BINDIR=$PROJDIR

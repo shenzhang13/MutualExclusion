@@ -1,6 +1,6 @@
 import java.io.FileNotFoundException;
 import java.io.FileReader;
-import java.io.Serializable;
+import java.io.IOException;
 import java.util.*;
 
 public class Application {
@@ -13,7 +13,7 @@ public class Application {
     private static HashMap<Integer, String> hostMap = new HashMap<>();
     private static HashMap<Integer, Integer> portMap = new HashMap<>();
     private static HashSet<Integer> completeGraph = new HashSet<>(); // Set of all the nodes
-    private static HashSet<String> keys = new HashSet<>(); // Set of keys in the current node
+//    private static HashSet<String> keys = new HashSet<>(); // Set of keys in the current node
 //    private static CurrState currState;
     public static boolean hasSentReqForThisRound = false;
 //    public static boolean isInCriticalSection = false;
@@ -53,48 +53,55 @@ public class Application {
             portMap.put(Integer.parseInt(array[0]), Integer.parseInt(array[2]));
 //          node = new Node(Integer.parseInt(array[0]), array[1], Integer.parseInt(array[2]));
 
-            // Keys initialization, eg. put "0-1" for node 0, "1-2" for node 1, "2-0" for node 2
-            // Each node holds exactly one key when initialized
-            int nextId = (nodeId + 1) % numOfNode;
-            keys.add(Math.min(nodeId, nextId) + "-" + Math.max(nodeId, nextId));
-
             index++;
         }
-
-        server.currState.keys = keys;
+        // Keys initialization, eg. put "0-1" for node 0, "1-2" for node 1, "2-0" for node 2
+        // Each node holds exactly one key when initialized
+        int nextId = (nodeId + 1) % numOfNode;
+        String key = (Math.min(nodeId, nextId) + "-" + Math.max(nodeId, nextId));
+        synchronized (server.currState) {
+            server.currState.keys.add(key);
+        }
 
     }
 
 
-    public static void main(String[] args) throws FileNotFoundException {
+    public static void main(String[] args) throws IOException {
         nodeId = Integer.parseInt(args[0]);
         readConfigFile(nodeId);
 
         //TODO makeChannels after start??
+        server.startServer();
         server.start();
-        server.makeChannels();
+
 
 
         while(currNumOfRequest < totalNumOfRequest) {
-            Random r = new Random();
-            long interRequestDelay = (long)r.nextGaussian() + meanInterRequestDelay;
+            long interRequestDelay = getRandomNum(meanInterRequestDelay);
             try {
                 Thread.sleep(interRequestDelay);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+            System.out.println("Node " + nodeId + " tries to enter CS");
             csEnter();
             executeCriticalSection();
             csLeave();
+            System.out.println("Node " + nodeId + " has left CS");
 
             currNumOfRequest++;
 
         }
     }
 
-    public static void csEnter() {
-        long currTime = TimeStamp.returnTime();
-        Message message = new Message("Node " + nodeId + " sent a request.", MessageType.REQUEST, nodeId, new TimeStamp(currTime, nodeId), null);
+    // TODO check, should be exponectial
+    private static long getRandomNum(int num) {
+        Random r = new Random();
+        return (long)r.nextGaussian() + num;
+    }
+
+    public static void csEnter() throws IOException {
+        Message message = new Message("Node " + nodeId + " sent a request.", MessageType.REQUEST, nodeId, ++server.currState.timestamp, null);
         // add request to queue
         synchronized (server.currState) {
             server.currState.pendingRequests.put(message.nodeId, message);
@@ -112,6 +119,7 @@ public class Application {
 
             return;
         } else {
+
             server.makeRequests();
         }
 
@@ -137,7 +145,7 @@ public class Application {
 
         System.out.println("Executing CS");
         try {
-            Thread.sleep(meanCsExecutionTime);
+            Thread.sleep(getRandomNum(meanCsExecutionTime));
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
         }
@@ -173,20 +181,3 @@ public class Application {
 
 }
 
-class TimeStamp implements Serializable {
-
-    private static final long serialVersionUID = 1L;
-    long time;
-    int nodeId;
-
-    public TimeStamp(long time, int nodeId) {
-        this.time = time;
-        this.nodeId = nodeId;
-    }
-
-    public static long returnTime() {
-        java.util.Date date = new java.util.Date();
-        return date.getTime();
-    }
-
-}
