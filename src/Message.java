@@ -17,12 +17,12 @@ enum MessageType {
 public class Message implements Serializable {
     MessageType messageType;
     public String message;
-    int timestamp;
+    TimeStamp timestamp;
     int nodeId;
     String keyCarried;
 
     // Constructor
-    public Message(String msg, MessageType messageType, int nodeId, int timestamp, String keyCarried) {
+    public Message(String msg, MessageType messageType, int nodeId, TimeStamp timestamp, String keyCarried) {
         message = msg;
         this.messageType = messageType;
         this.timestamp = timestamp;

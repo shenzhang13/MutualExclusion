@@ -14,7 +14,7 @@ CONFIGLOCAL=$PROJDIR/configuration.txt
 BINDIR=$PROJDIR
 
 # Your main project class
-PROG=MutualExclusion
+PROG=Application
 
 
 n=0
@@ -27,7 +27,7 @@ cat $CONFIGLOCAL | sed -e "s/#.*//" | sed -e "/^\s*$/d" |
   numOfNode=$(echo "$firstLine" | awk '{ print $1 }')
   interRequestDelay=$(echo "$firstLine" | awk '{ print $2 }')
   csExecutionTime=$(echo "$firstLine" | awk '{ print $3 }')
-  numOfRequest=$(echo "$firstLine" | awk '{ print $4 }')
+  maxNumOfRequest=$(echo "$firstLine" | awk '{ print $4 }')
 
   while [[ $n -lt $numOfNode ]]; do # loop for numOfNode times
     read -r line
