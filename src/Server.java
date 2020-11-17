@@ -29,37 +29,46 @@ public class Server extends Thread {
     }
 
 
-
-    public void run(){
-        try{
-            while(true){
+    public void run() {
+        try {
+            while (true) {
 //                synchronized (currState){
-                    SctpChannel rcvSC = sctpServerChannel.accept();
+                System.out.println("3---**************"); // YES
+                for(String k : currState.keys){
+                    System.out.println(k);
+                }
+                SctpChannel rcvSC = sctpServerChannel.accept();
+                System.out.println("4---**************"); // YES
+                ByteBuffer buf = ByteBuffer.allocateDirect(MAX_MSG_SIZE);
+                rcvSC.receive(buf, null, null); // Messages are received over SCTP using ByteBuffer
+                Message msg = Message.fromByteBuffer(buf);
+                // update timestamp
+                synchronized (currState) {
+                    currState.timestamp = Math.max(currState.timestamp, msg.timestamp) + 1;
+                }
 
-                    ByteBuffer buf = ByteBuffer.allocateDirect(MAX_MSG_SIZE);
-                    rcvSC.receive(buf, null, null); // Messages are received over SCTP using ByteBuffer
-                    Message msg = Message.fromByteBuffer(buf);
-                    // update timestamp
-                    synchronized (currState) {
-                        currState.timestamp = Math.max(currState.timestamp, msg.timestamp) + 1;
-                    }
-
-                    switch (msg.messageType) {
-                        case REPLY: {
-                            // add the key from REPLY to local key set
-                            synchronized (currState) {
-                                currState.keys.add(msg.keyCarried);
-                            }
+                switch (msg.messageType) {
+                    case REPLY: {
+                        // add the key from REPLY to local key set
+                        synchronized (currState) {
+                            currState.keys.add(msg.keyCarried);
                         }
-                        case REQUEST: {
-                            if (currState.isInCriticalSection) {
+                    }
+                    case REQUEST: {
+                        System.out.println("(((((((((RECEIVED REQUEST");
+                        if (currState.isInCriticalSection) {
+                            synchronized (currState) {
+                                currState.pendingRequests.put(msg.nodeId, msg);
+                            }
+                            continue;
+                        } else if (Application.hasSentReqForThisRound) {
+                            // compare timestamp
+                            if (currState.timestamp > msg.timestamp) {
                                 synchronized (currState) {
-                                    currState.pendingRequests.put(msg.nodeId, msg);
+                                    sendMessageWithKey(msg.nodeId, MessageType.BOTH);
                                 }
-                                continue;
-                            } else if (Application.hasSentReqForThisRound) {
-                                // compare timestamp
-                                if (currState.timestamp > msg.timestamp) {
+                            } else if (currState.timestamp == msg.timestamp) {
+                                if (currState.nodeId > msg.nodeId) {
                                     synchronized (currState) {
                                         sendMessageWithKey(msg.nodeId, MessageType.BOTH);
                                     }
@@ -67,23 +76,28 @@ public class Server extends Thread {
                                     synchronized (currState) {
                                         currState.pendingRequests.put(msg.nodeId, msg);
                                     }
-
                                 }
-                            } else { // has no pending request
+                            } else {
                                 synchronized (currState) {
-                                    sendMessageWithKey(msg.nodeId, MessageType.REPLY);
+                                    currState.pendingRequests.put(msg.nodeId, msg);
                                 }
-                            }
 
-                        }
-                        case BOTH: {
+                            }
+                        } else { // has no pending request
                             synchronized (currState) {
-                                currState.keys.add(msg.keyCarried);
-                                currState.pendingRequests.put(msg.nodeId, msg);
+                                sendMessageWithKey(msg.nodeId, MessageType.REPLY);
                             }
-
                         }
+
                     }
+                    case BOTH: {
+                        synchronized (currState) {
+                            currState.keys.add(msg.keyCarried);
+                            currState.pendingRequests.put(msg.nodeId, msg);
+                        }
+
+                    }
+                }
 //                }
 
 
@@ -96,8 +110,10 @@ public class Server extends Thread {
     }
 
 
-
     public void sendMessageWithKey(int senderId, MessageType type) throws Exception {
+
+        System.out.println("NODE ID: " + currState.nodeId + " is trying to send key to: " + senderId);
+
         InetSocketAddress addr = new InetSocketAddress(hostMap.get(senderId), portMap.get(senderId));
         SctpChannel sendChannel = SctpChannel.open(addr, 0, 0);
 
@@ -106,26 +122,19 @@ public class Server extends Thread {
         Message msg = new Message("", type, currState.nodeId, ++currState.timestamp, keySendBack);
         sendChannel.send(msg.toByteBuffer(), messageInfo); // Messages are sent over SCTP using ByteBuffer
         currState.keys.remove(keySendBack);
+
+        System.out.println("--------- SENT ----------");
         System.out.println(msg.message);
     }
 
 
-
-    public void startServer(){
-        try{
+    public void startServer() {
+        try {
             InetSocketAddress address = new InetSocketAddress(portMap.get(currState.nodeId)); // Get address from port number
-            SctpServerChannel sctpServerChannel = SctpServerChannel.open();//Open server channel
+            sctpServerChannel = SctpServerChannel.open();//Open server channel
             sctpServerChannel.bind(address);//Bind server channel to address
             System.out.println("Server started");
             Thread.sleep(5000);
-            // connect to all other nodes in the graph
-            for (int neighbor : hostMap.keySet()) {
-                if (neighbor != currState.nodeId) {
-                    InetSocketAddress addr = new InetSocketAddress(hostMap.get(neighbor), portMap.get(neighbor));
-                    SctpChannel sendChannel = SctpChannel.open(addr, 0, 0);
-                    senders.put(neighbor, sendChannel);
-                }
-            }
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -133,17 +142,21 @@ public class Server extends Thread {
 
 
     public void makeRequests() throws IOException {
-        for(int neighbor : hostMap.keySet()){
+        for (int neighbor : hostMap.keySet()) {
+            if (neighbor == currState.nodeId) continue;
             String key = Math.min(currState.nodeId, neighbor) + "-" + Math.max(currState.nodeId, neighbor);
+
             if (!currState.keys.contains(key)) {
+                System.out.println("-------------*****************@@@@@@@@@@@@@@ " + key); // yes
+
                 InetSocketAddress addr = new InetSocketAddress(hostMap.get(neighbor), portMap.get(neighbor));
                 SctpChannel sendChannel = SctpChannel.open(addr, 0, 0);
-//                senders.put(neighbor, sendChannel);
-
                 MessageInfo messageInfo = MessageInfo.createOutgoing(null, 0); // MessageInfo for SCTP layer
                 Message message = new Message("Node " + currState.nodeId + " make a request", MessageType.REQUEST, currState.nodeId, ++currState.timestamp, null);
                 try {
+                    System.out.println("MAKING REQUEST"); //yes
                     sendChannel.send(message.toByteBuffer(), messageInfo); // Messages are sent over SCTP using ByteBuffer
+                    System.out.println("REQUEST SENT"); //yes
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -153,7 +166,10 @@ public class Server extends Thread {
 
     public boolean checkForKeys(CurrState currState) {
 //        synchronized (currState){
-            return currState.keys.size() == completeGraph.size() - 1;
+//        System.out.println("Current num of Keys: " + currState.keys.size());
+//        System.out.println("Total nodes: " + completeGraph.size());
+        currState.keys.remove(null);
+        return currState.keys.size() == completeGraph.size() - 1;
 //        }
     }
 }
@@ -162,7 +178,7 @@ public class Server extends Thread {
 class CurrState {
     int nodeId;
     long timestamp;
-//    int globalMaxTimestamp;
+    //    int globalMaxTimestamp;
     HashSet<String> keys;
     boolean isInCriticalSection;
     boolean hasPendingRequest;

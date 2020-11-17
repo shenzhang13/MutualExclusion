@@ -23,7 +23,7 @@ public class Application {
 
 
     private static void readConfigFile(int nodeId) throws FileNotFoundException {
-        FileReader file = new FileReader("/home/012/s/sx/sxz162330/AOS/Project2/configuration.txt");
+        FileReader file = new FileReader("/home/012/q/qx/qxw170003/AOS_P2/config.txt");
         Scanner scanner = new Scanner(file);
         // Read first meaningful line
         while (scanner.hasNextLine()) {
@@ -55,6 +55,18 @@ public class Application {
 
             index++;
         }
+
+
+    }
+
+
+    public static void main(String[] args) throws IOException {
+        nodeId = Integer.parseInt(args[0]);
+        readConfigFile(nodeId);
+        server = new Server(nodeId, hostMap, portMap, completeGraph);
+
+        //TODO makeChannels after start??
+
         // Keys initialization, eg. put "0-1" for node 0, "1-2" for node 1, "2-0" for node 2
         // Each node holds exactly one key when initialized
         int nextId = (nodeId + 1) % numOfNode;
@@ -63,14 +75,6 @@ public class Application {
             server.currState.keys.add(key);
         }
 
-    }
-
-
-    public static void main(String[] args) throws IOException {
-        nodeId = Integer.parseInt(args[0]);
-        readConfigFile(nodeId);
-
-        //TODO makeChannels after start??
         server.startServer();
         server.start();
 
@@ -84,6 +88,11 @@ public class Application {
                 e.printStackTrace();
             }
             System.out.println("Node " + nodeId + " tries to enter CS");
+            System.out.println("Key num: " + server.currState.keys.size());
+            for(String k : server.currState.keys){
+                System.out.println(k);
+            }
+
             csEnter();
             executeCriticalSection();
             csLeave();
@@ -107,6 +116,7 @@ public class Application {
             server.currState.pendingRequests.put(message.nodeId, message);
         }
 
+
         hasSentReqForThisRound = true;
 
         // if has all keys, return and execute CS
@@ -119,7 +129,6 @@ public class Application {
 
             return;
         } else {
-
             server.makeRequests();
         }
 
@@ -127,6 +136,7 @@ public class Application {
         while (!server.checkForKeys(server.currState)) {
             try {
                 Thread.sleep(1000);
+//                System.out.println("9****-----------------------------");
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -163,7 +173,7 @@ public class Application {
             for (int neighbor : server.currState.pendingRequests.keySet()) {
                 if (neighbor != server.currState.nodeId) {
                     synchronized (server.currState) {
-                        server.sendMessageWithKey(server.currState.nodeId, MessageType.REPLY);
+                        server.sendMessageWithKey(neighbor, MessageType.REPLY);
                     }
 
                 }
