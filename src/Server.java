@@ -115,8 +115,6 @@ public class Server extends Thread {
      * @throws Exception
      */
     public void sendMessageWithKey(int senderId, MessageType type) throws Exception {
-//        System.out.println("NODE ID: " + currState.nodeId + " is trying to send key to: " + senderId);
-
         InetSocketAddress addr = new InetSocketAddress(hostMap.get(senderId), portMap.get(senderId));
         SctpChannel sendChannel = SctpChannel.open(addr, 0, 0);
 
@@ -172,12 +170,8 @@ public class Server extends Thread {
      * @return true if has all the keys needed for CS, false otherwise
      */
     public boolean checkForKeys(CurrState currState) {
-//        synchronized (currState){
-//        System.out.println("Current num of Keys: " + currState.keys.size());
-//        System.out.println("Total nodes: " + completeGraph.size());
         currState.keys.remove(null);
         return currState.keys.size() == completeGraph.size() - 1;
-//        }
     }
 }
 

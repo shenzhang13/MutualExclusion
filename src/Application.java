@@ -19,9 +19,7 @@ public class Application {
     private static HashMap<Integer, String> hostMap = new HashMap<>();
     private static HashMap<Integer, Integer> portMap = new HashMap<>();
     private static HashSet<Integer> completeGraph = new HashSet<>(); // Set of all the nodes
-    //    private static CurrState currState;
     public static boolean hasSentReqForThisRound = false;
-    //    public static boolean isInCriticalSection = false;
     public static boolean hasAllKeys = false;
     private static Server server;
 
@@ -70,15 +68,9 @@ public class Application {
 
 
     public static void main(String[] args) throws IOException, InterruptedException {
-
         nodeId = Integer.parseInt(args[0]);
-//        PrintStream out = new PrintStream(new FileOutputStream("output.txt"));
-//        PrintStream out = new PrintStream(new FileOutputStream("output" +nodeId+ ".txt"));
-//        System.setOut(out);
-
         out = new PrintWriter(new BufferedWriter(new FileWriter("output.txt", true)));
         out.close();
-
 
         readConfigFile(nodeId);
         server = new Server(nodeId, hostMap, portMap, completeGraph);
@@ -102,11 +94,6 @@ public class Application {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-//            System.out.println("Node " + nodeId + " tries to enter CS");
-//            System.out.println("Key num: " + server.currState.keys.size());
-//            for(String k : server.currState.keys){
-//                System.out.println(k);
-//            }
 
             csEnter();
             System.out.println("Node " + nodeId + " is entering CS for the " + currNumOfRequest + " times.");
@@ -127,7 +114,6 @@ public class Application {
     private static int getRandomNum(int num) {
         Random rand = new Random();
         double exponentialRandom = Math.log(1 - rand.nextDouble()) / -3;
-        System.out.println(exponentialRandom);
         return (int)Math.floor(num * (1 + exponentialRandom));
     }
 
@@ -180,7 +166,6 @@ public class Application {
         out.append(millis + "");
         out.println();
         out.close();
-//        java.util.Date date=new java.util.Date(millis);
         System.out.println("Start time: " + millis);
         synchronized (server.currState) {
             server.currState.isInCriticalSection = true;
