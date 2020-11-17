@@ -1,9 +1,13 @@
-import java.io.*;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.io.BufferedWriter;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Random;
+import java.util.Scanner;
 
 public class Application {
     private static int nodeId;
@@ -15,8 +19,7 @@ public class Application {
     private static HashMap<Integer, String> hostMap = new HashMap<>();
     private static HashMap<Integer, Integer> portMap = new HashMap<>();
     private static HashSet<Integer> completeGraph = new HashSet<>(); // Set of all the nodes
-    //    private static HashSet<String> keys = new HashSet<>(); // Set of keys in the current node
-//    private static CurrState currState;
+    //    private static CurrState currState;
     public static boolean hasSentReqForThisRound = false;
     //    public static boolean isInCriticalSection = false;
     public static boolean hasAllKeys = false;
@@ -24,6 +27,11 @@ public class Application {
 
     private static PrintWriter out;
 
+    /**
+     * Read info from config file, construct host, port mapping for each node
+     * @param nodeId current node id as integer
+     * @throws FileNotFoundException exception thrown when config file is missing
+     */
     private static void readConfigFile(int nodeId) throws FileNotFoundException {
         FileReader file = new FileReader("/home/012/q/qx/qxw170003/AOS_P2/config.txt");
         Scanner scanner = new Scanner(file);
@@ -68,10 +76,8 @@ public class Application {
 //        PrintStream out = new PrintStream(new FileOutputStream("output" +nodeId+ ".txt"));
 //        System.setOut(out);
 
-
         out = new PrintWriter(new BufferedWriter(new FileWriter("output.txt", true)));
         out.close();
-
 
 
         readConfigFile(nodeId);
@@ -90,7 +96,7 @@ public class Application {
 
 
         while (currNumOfRequest < totalNumOfRequest) {
-            long interRequestDelay = getRandomNum(meanInterRequestDelay);
+            int interRequestDelay = getRandomNum(meanInterRequestDelay);
             try {
                 Thread.sleep(interRequestDelay);
             } catch (InterruptedException e) {
@@ -113,12 +119,22 @@ public class Application {
         server.currState.finishedAllRounds = true;
     }
 
-    // TODO check, should be exponectial
-    private static long getRandomNum(int num) {
-        Random r = new Random();
-        return (long) r.nextGaussian() + num;
+    /**
+     * Generate exponential distributed random number
+     * @param num the mean value passed in
+     * @return generated random number as integer
+     */
+    private static int getRandomNum(int num) {
+        Random rand = new Random();
+        double exponentialRandom = Math.log(1 - rand.nextDouble()) / -3;
+        System.out.println(exponentialRandom);
+        return (int)Math.floor(num * (1 + exponentialRandom));
     }
 
+    /**
+     * Method to make request to enter CS
+     * @throws IOException
+     */
     public static void csEnter() throws IOException {
         hasSentReqForThisRound = true;
         Message message = new Message("Node " + nodeId + " sent a request.", MessageType.REQUEST, nodeId, server.currState.timestamp, null);
@@ -127,7 +143,6 @@ public class Application {
             server.currState.pendingRequests.put(message.nodeId, message);
         }
 
-
         // if has all keys, return and execute CS
         // else make request for keys
         if (server.checkForKeys(server.currState)) {
@@ -135,7 +150,6 @@ public class Application {
             synchronized (server.currState) {
                 server.currState.isInCriticalSection = true;
             }
-
             return;
         } else {
             server.makeRequests();
@@ -145,7 +159,6 @@ public class Application {
         while (!server.checkForKeys(server.currState)) {
             try {
                 Thread.sleep(1000);
-//                System.out.println("9****-----------------------------");
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -157,31 +170,34 @@ public class Application {
 
     }
 
+    /**
+     * Method to execute CS on a node, print out log file for inspection
+     * @throws IOException
+     */
     public static void executeCriticalSection() throws IOException {
-        long millis=System.currentTimeMillis();
+        long millis = System.currentTimeMillis();
         out = new PrintWriter(new BufferedWriter(new FileWriter("output.txt", true)));
-        out.append(millis+"");
+        out.append(millis + "");
         out.println();
         out.close();
 //        java.util.Date date=new java.util.Date(millis);
-        System.out.println("Start time: " +  millis);
+        System.out.println("Start time: " + millis);
         synchronized (server.currState) {
             server.currState.isInCriticalSection = true;
         }
 
         System.out.println("Executing CS");
+        int csExecutionTime = getRandomNum(meanCsExecutionTime);
         try {
-            Thread.sleep(getRandomNum(meanCsExecutionTime));
-            long millis2=System.currentTimeMillis();
+            Thread.sleep(csExecutionTime);
+            long millis2 = System.currentTimeMillis();
 
             out = new PrintWriter(new BufferedWriter(new FileWriter("output.txt", true)));
-            out.append(millis2+"");
+            out.append(millis2 + "");
             out.println();
             out.close();
 
 
-
-//            java.util.Date date2=new java.util.Date(millis2);
             System.out.println("End time: " + millis2);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
@@ -189,6 +205,9 @@ public class Application {
 
     }
 
+    /**
+     * Method to reset current state upon exiting the CS
+     */
     public static void csLeave() {
         synchronized (server.currState) {
             server.currState.isInCriticalSection = false;
@@ -202,18 +221,11 @@ public class Application {
                     synchronized (server.currState) {
                         server.sendMessageWithKey(neighbor, MessageType.REPLY);
                     }
-
                 }
                 synchronized (server.currState) {
                     server.currState.pendingRequests.remove(neighbor);
                 }
-
             }
-//        } catch (ConcurrentModificationException e) {
-//            e.printStackTrace();
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
         } catch (Exception e) {
             e.printStackTrace();
         }
