@@ -20,14 +20,14 @@ public class Server extends Thread {
 
     /**
      * Constructor for Server class
-     * @param nodeId node's id as integer
-     * @param hostMap hashmap that map the nodeId to its hostname
-     * @param portMap hashmap that map the nodeId to its port number
+     *
+     * @param nodeId        node's id as integer
+     * @param hostMap       hashmap that map the nodeId to its hostname
+     * @param portMap       hashmap that map the nodeId to its port number
      * @param completeGraph hashset that contain all the nodes in the system
      * @throws IOException exception thrown
      */
     public Server(int nodeId, HashMap<Integer, String> hostMap, HashMap<Integer, Integer> portMap, HashSet<Integer> completeGraph) throws IOException {
-
         currState = new CurrState(nodeId, 0, 0, new HashSet<String>(), false, false, 1, new ConcurrentHashMap<Integer, Message>());
         this.hostMap = hostMap;
         this.portMap = portMap;
@@ -43,7 +43,7 @@ public class Server extends Thread {
                 ByteBuffer buf = ByteBuffer.allocateDirect(MAX_MSG_SIZE);
                 rcvSC.receive(buf, null, null); // Messages are received over SCTP using ByteBuffer
                 Message msg = Message.fromByteBuffer(buf);
-                // update timestamp
+                currState.totalMsgNum++;
                 synchronized (currState) {
                     currState.globalMaxTimestamp = Math.max(currState.globalMaxTimestamp, msg.timestamp) + 1;
                 }
@@ -56,14 +56,12 @@ public class Server extends Thread {
                         }
                     }
                     case REQUEST: {
-
                         if (currState.isInCriticalSection) {
                             synchronized (currState) {
                                 currState.pendingRequests.put(msg.nodeId, msg);
                             }
                             continue;
                         } else if (Application.hasSentReqForThisRound) {
-                            // compare timestamp
                             if (currState.timestamp > msg.timestamp) {
                                 synchronized (currState) {
                                     sendMessageWithKey(msg.nodeId, MessageType.BOTH);
@@ -85,7 +83,7 @@ public class Server extends Thread {
                                 }
 
                             }
-                        } else { // has no pending request
+                        } else {
                             synchronized (currState) {
                                 sendMessageWithKey(msg.nodeId, MessageType.REPLY);
                             }
@@ -110,6 +108,7 @@ public class Server extends Thread {
 
     /**
      * Method to send the key to neighbor along with the message
+     *
      * @param senderId
      * @param type
      * @throws Exception
@@ -122,8 +121,8 @@ public class Server extends Thread {
         MessageInfo messageInfo = MessageInfo.createOutgoing(null, 0); // MessageInfo for SCTP layer
         Message msg = new Message("", type, currState.nodeId, currState.timestamp, keySendBack);
         sendChannel.send(msg.toByteBuffer(), messageInfo); // Messages are sent over SCTP using ByteBuffer
+        currState.totalMsgNum++;
         currState.keys.remove(keySendBack);
-
     }
 
     /**
@@ -142,7 +141,8 @@ public class Server extends Thread {
     }
 
     /**
-     * Send message to neighbor to request the key
+     * Send message to neighbors to request the key
+     *
      * @throws IOException
      */
     public void makeRequests() throws IOException {
@@ -157,6 +157,7 @@ public class Server extends Thread {
                 Message message = new Message("Node " + currState.nodeId + " make a request", MessageType.REQUEST, currState.nodeId, currState.timestamp, null);
                 try {
                     sendChannel.send(message.toByteBuffer(), messageInfo); // Messages are sent over SCTP using ByteBuffer
+                    currState.totalMsgNum++;
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -166,6 +167,7 @@ public class Server extends Thread {
 
     /**
      * Check if a node has enough keys to enter its CS
+     *
      * @param currState current state of the node
      * @return true if has all the keys needed for CS, false otherwise
      */
@@ -186,7 +188,8 @@ class CurrState {
     boolean isInCriticalSection;
     boolean hasPendingRequest;
     boolean finishedAllRounds;
-    int counter = 1;
+    int counter;
+    int totalMsgNum; // count the total num of messages sent & rcvd on this node
     public ConcurrentHashMap<Integer, Message> pendingRequests;
 
 
@@ -200,5 +203,6 @@ class CurrState {
         this.counter = counter;
         this.pendingRequests = pendingRequests;
         this.finishedAllRounds = false;
+        this.totalMsgNum = 0;
     }
 }

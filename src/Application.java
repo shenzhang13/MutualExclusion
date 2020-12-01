@@ -23,7 +23,13 @@ public class Application {
     public static boolean hasAllKeys = false;
     private static Server server;
 
+
     private static PrintWriter out;
+
+
+    private static long requestTime;  // the time when node starts to request for critical section
+    private static long responseTimeSum; // sum of response time on the node
+
 
     /**
      * Read info from config file, construct host, port mapping for each node
@@ -67,9 +73,12 @@ public class Application {
     }
 
 
-    public static void main(String[] args) throws IOException, InterruptedException {
+    public static void main(String[] args) throws Exception {
         nodeId = Integer.parseInt(args[0]);
-        out = new PrintWriter(new BufferedWriter(new FileWriter("output.txt", true)));
+        out = new PrintWriter(new BufferedWriter(new FileWriter("validation.txt", true)));
+        out.close();
+
+        out = new PrintWriter(new BufferedWriter(new FileWriter("performance.txt", true)));
         out.close();
 
         readConfigFile(nodeId);
@@ -82,6 +91,7 @@ public class Application {
         synchronized (server.currState) {
             server.currState.keys.add(key);
         }
+
 
         server.startServer();
         server.start();
@@ -103,7 +113,17 @@ public class Application {
             currNumOfRequest++;
 
         }
+
         server.currState.finishedAllRounds = true;
+
+        // Sleep for some time to keep communication with other nodes if necessary
+        Thread.sleep(10000);
+        out = new PrintWriter(new BufferedWriter(new FileWriter("performance.txt", true)));
+        out.append("Message count on Node " + nodeId + ": " + server.currState.totalMsgNum);
+        out.println();
+        out.append("Average response time on Node " + nodeId + ": " + responseTimeSum / totalNumOfRequest);
+        out.println();
+        out.close();
     }
 
     /**
@@ -122,6 +142,7 @@ public class Application {
      * @throws IOException
      */
     public static void csEnter() throws IOException {
+        requestTime = System.currentTimeMillis();
         hasSentReqForThisRound = true;
         Message message = new Message("Node " + nodeId + " sent a request.", MessageType.REQUEST, nodeId, server.currState.timestamp, null);
         // add request to queue
@@ -161,12 +182,12 @@ public class Application {
      * @throws IOException
      */
     public static void executeCriticalSection() throws IOException {
-        long millis = System.currentTimeMillis();
-        out = new PrintWriter(new BufferedWriter(new FileWriter("output.txt", true)));
-        out.append(millis + "");
+        long enterTime = System.currentTimeMillis();
+        out = new PrintWriter(new BufferedWriter(new FileWriter("validation.txt", true)));
+        out.append(enterTime + "");
         out.println();
         out.close();
-        System.out.println("Start time: " + millis);
+        System.out.println("Start time: " + enterTime);
         synchronized (server.currState) {
             server.currState.isInCriticalSection = true;
         }
@@ -175,15 +196,17 @@ public class Application {
         int csExecutionTime = getRandomNum(meanCsExecutionTime);
         try {
             Thread.sleep(csExecutionTime);
-            long millis2 = System.currentTimeMillis();
+            long leaveTime = System.currentTimeMillis();
 
-            out = new PrintWriter(new BufferedWriter(new FileWriter("output.txt", true)));
-            out.append(millis2 + "");
+            out = new PrintWriter(new BufferedWriter(new FileWriter("validation.txt", true)));
+            out.append(leaveTime + "");
             out.println();
             out.close();
 
+            responseTimeSum += leaveTime - requestTime; // calculate the total response time on this server
 
-            System.out.println("End time: " + millis2);
+
+            System.out.println("End time: " + leaveTime);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
         }

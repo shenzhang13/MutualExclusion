@@ -4,7 +4,7 @@ import java.util.Scanner;
 
 public class Tester {
     public static void main(String[] args) throws FileNotFoundException {
-        FileReader file = new FileReader("/home/012/q/qx/qxw170003/output.txt");
+        FileReader file = new FileReader("/home/012/q/qx/qxw170003/validation.txt");
         Scanner scanner = new Scanner(file);
         String prevLine = "";
         String currLine = "";
